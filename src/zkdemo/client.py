@@ -1,6 +1,7 @@
 """Initial endpoint-file rendering for a ZooKeeper cluster client."""
 
 import os
+import random
 from pathlib import Path
 from threading import Event
 
@@ -46,12 +47,39 @@ def run_client(
     cluster: str,
     output_file: str | Path,
     *,
+    delay: float = 3.0,
     stop_event: Event | None = None,
 ) -> None:
-    """Render the initial snapshot and remain in the foreground."""
+    """Render the snapshot and converge after watched cluster changes."""
     endpoints = endpoint_snapshot(client, cluster)
     write_endpoint_file(output_file, endpoints)
+    changes = Event()
+    shutdown = stop_event or Event()
+
+    def changed(_event: object) -> None:
+        changes.set()
+
+    def install_watches() -> None:
+        cluster_path = f"/{cluster}"
+        names = client.get_children(cluster_path, watch=changed)
+        for name in names:
+            client.get(f"{cluster_path}/{name}", watch=changed)
+
+    install_watches()
     try:
-        (stop_event or Event()).wait()
+        while not shutdown.is_set():
+            if not changes.wait(0.1):
+                continue
+            changes.clear()
+            while True:
+                install_watches()
+                jitter = random.uniform(0, delay)
+                if shutdown.wait(jitter):
+                    return
+                if not changes.is_set():
+                    break
+                changes.clear()
+            endpoints = endpoint_snapshot(client, cluster)
+            write_endpoint_file(output_file, endpoints)
     except KeyboardInterrupt:
         return

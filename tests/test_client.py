@@ -3,6 +3,7 @@
 import os
 import signal
 import subprocess
+import threading
 from pathlib import Path
 from time import monotonic, sleep
 from uuid import uuid4
@@ -148,6 +149,168 @@ def test_client_missing_cluster_fails_and_preserves_existing_file(
     assert captured.out == ""
     assert "does not exist" in captured.err
     assert target.read_text(encoding="utf-8") == "old\n"
+
+
+def test_client_converges_after_member_add_and_remove(
+    zookeeper_hosts: str, tmp_path: Path
+) -> None:
+    client = KazooClient(hosts=zookeeper_hosts)
+    client.start(timeout=10)
+    cluster = f"client-{uuid4().hex}"
+    target = tmp_path / "bpdb.endpoints"
+    environment = os.environ.copy()
+    environment["ZKTEST_HOSTS"] = zookeeper_hosts
+    try:
+        client.create(f"/{cluster}")
+        client.create(f"/{cluster}/bpdb17", b"10.1.1.1:3306")
+        process = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "zktest",
+                "client",
+                "--cluster",
+                cluster,
+                "--file",
+                str(target),
+                "--delay",
+                "0",
+            ],
+            cwd=Path(__file__).parents[1],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            initial = "10.1.1.1:3306 # bpdb17\n"
+            assert _wait_for_content(target, initial)
+
+            client.create(f"/{cluster}/bpdb03", b"10.1.1.3:3306")
+            expanded = "10.1.1.3:3306 # bpdb03\n" + initial
+            assert _wait_for_content(target, expanded)
+
+            client.delete(f"/{cluster}/bpdb03")
+            assert _wait_for_content(target, initial)
+            process.send_signal(signal.SIGINT)
+            assert process.wait(timeout=10) == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    finally:
+        client.delete(f"/{cluster}", recursive=True)
+        client.stop()
+
+
+def test_client_converges_after_member_data_change(
+    zookeeper_hosts: str, tmp_path: Path
+) -> None:
+    client = KazooClient(hosts=zookeeper_hosts)
+    client.start(timeout=10)
+    cluster = f"client-{uuid4().hex}"
+    target = tmp_path / "bpdb.endpoints"
+    environment = os.environ.copy()
+    environment["ZKTEST_HOSTS"] = zookeeper_hosts
+    try:
+        client.create(f"/{cluster}")
+        member = f"/{cluster}/bpdb17"
+        client.create(member, b"old-endpoint")
+        process = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "zktest",
+                "client",
+                "--cluster",
+                cluster,
+                "--file",
+                str(target),
+                "--delay",
+                "0",
+            ],
+            cwd=Path(__file__).parents[1],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert _wait_for_content(target, "old-endpoint # bpdb17\n")
+            client.set(member, b"new-endpoint")
+            assert _wait_for_content(target, "new-endpoint # bpdb17\n")
+            process.send_signal(signal.SIGINT)
+            assert process.wait(timeout=10) == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    finally:
+        client.delete(f"/{cluster}", recursive=True)
+        client.stop()
+
+
+def test_client_target_is_always_an_old_or_new_complete_snapshot(
+    zookeeper_hosts: str, tmp_path: Path
+) -> None:
+    client = KazooClient(hosts=zookeeper_hosts)
+    client.start(timeout=10)
+    cluster = f"client-{uuid4().hex}"
+    target = tmp_path / "bpdb.endpoints"
+    environment = os.environ.copy()
+    environment["ZKTEST_HOSTS"] = zookeeper_hosts
+    try:
+        client.create(f"/{cluster}")
+        member = f"/{cluster}/bpdb17"
+        old_endpoint = "old-" + ("x" * 10000)
+        new_endpoint = "new-" + ("y" * 10000)
+        client.create(member, old_endpoint.encode())
+        process = subprocess.Popen(
+            [
+                "uv",
+                "run",
+                "zktest",
+                "client",
+                "--cluster",
+                cluster,
+                "--file",
+                str(target),
+                "--delay",
+                "0",
+            ],
+            cwd=Path(__file__).parents[1],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            old_content = f"{old_endpoint} # bpdb17\n"
+            new_content = f"{new_endpoint} # bpdb17\n"
+            assert _wait_for_content(target, old_content)
+            observed: set[str] = set()
+            stop_reader = threading.Event()
+
+            def read_target() -> None:
+                while not stop_reader.is_set():
+                    observed.add(target.read_text(encoding="utf-8"))
+
+            reader = threading.Thread(target=read_target)
+            reader.start()
+            client.set(member, new_endpoint.encode())
+            assert _wait_for_content(target, new_content)
+            stop_reader.set()
+            reader.join(timeout=2)
+            assert observed <= {old_content, new_content}
+            process.send_signal(signal.SIGINT)
+            assert process.wait(timeout=10) == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    finally:
+        client.delete(f"/{cluster}", recursive=True)
+        client.stop()
 
 
 @pytest.mark.parametrize("delay", ["-1", "nan", "inf"])

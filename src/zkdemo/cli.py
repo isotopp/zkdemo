@@ -189,7 +189,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "client":
         try:
             with connected_client() as client:
-                run_client(client, args.cluster, args.output_file)
+                run_client(client, args.cluster, args.output_file, delay=args.delay)
         except (
             KazooException,
             KazooTimeoutError,
