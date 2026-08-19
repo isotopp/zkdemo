@@ -5,16 +5,34 @@ import pytest
 from zkdemo.cli import main
 
 
-@pytest.mark.parametrize(
-    ("command", "expected"),
-    [
-        ("client", "ZooKeeper client stub"),
-        ("server", "ZooKeeper server stub"),
-    ],
-)
-def test_command_stub(
-    command: str, expected: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    main([command])
+def test_help_lists_all_commands(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exception:
+        main(["--help"])
 
-    assert capsys.readouterr().out.strip() == expected
+    assert exception.value.code == 0
+    output = capsys.readouterr().out
+    assert "lslr" in output
+    assert "lr" in output
+    assert "cat" in output
+    assert "server" in output
+    assert "client" in output
+
+
+def test_unimplemented_command_fails_clearly(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exception:
+        main(
+            [
+                "server",
+                "--cluster",
+                "bpdb",
+                "--name",
+                "bpdb17",
+                "--endpoint",
+                "10.1.1.1:3306",
+            ]
+        )
+
+    assert exception.value.code == 2
+    assert "server is not implemented yet" in capsys.readouterr().err

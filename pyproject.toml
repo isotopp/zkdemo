@@ -7,7 +7,10 @@ authors = [
     { name = "Kristian Koehntopp", email = "kris-git@koehntopp.de" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "kazoo>=2.11.0",
+    "rich>=15.0.0",
+]
 
 [project.scripts]
 zktest = "zkdemo.cli:main"
