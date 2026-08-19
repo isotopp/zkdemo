@@ -1,4 +1,10 @@
-# Python-generated files
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python bytecode and build output
 __pycache__/
 *.py[oc]
 build/
@@ -6,5 +12,18 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
+# Test, type-checker, and linter caches
+.coverage
+.pytest_cache/
+.ruff_cache/
+.tox/
+.ty_cache/
+htmlcov/
+
+# Virtual environments and local configuration
+.env
+.env.*
+.venv/
+
+# Local ZooKeeper configuration, logs, PID state, and data directory
+/.zookeeper/
