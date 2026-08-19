@@ -18,7 +18,7 @@ def test_help_lists_all_commands(capsys: pytest.CaptureFixture[str]) -> None:
     assert "client" in output
 
 
-def test_unimplemented_command_fails_clearly(
+def test_missing_required_option_fails_clearly(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exception:
@@ -27,10 +27,8 @@ def test_unimplemented_command_fails_clearly(
                 "client",
                 "--cluster",
                 "bpdb",
-                "--file",
-                "/tmp/bpdb.endpoints",
             ]
         )
 
     assert exception.value.code == 2
-    assert "client is not implemented yet" in capsys.readouterr().err
+    assert "required: --file" in capsys.readouterr().err

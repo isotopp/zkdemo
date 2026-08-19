@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Sequence
 from typing import cast
@@ -11,6 +12,7 @@ from kazoo.handlers.threading import KazooTimeoutError
 from rich.console import Console
 from rich.table import Table
 
+from zkdemo.client import run_client
 from zkdemo.listing import (
     direct_children,
     read_data,
@@ -34,6 +36,18 @@ _STAT_FIELDS = (
     "numChildren",
     "pzxid",
 )
+
+
+def _nonnegative_finite(value: str) -> float:
+    try:
+        delay = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "delay must be a finite non-negative float"
+        ) from error
+    if not math.isfinite(delay) or delay < 0:
+        raise argparse.ArgumentTypeError("delay must be a finite non-negative float")
+    return delay
 
 
 def _print_lr_text(listing: dict[str, object]) -> None:
@@ -94,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     client.add_argument("--cluster", required=True)
     client.add_argument("--file", required=True, dest="output_file")
-    client.add_argument("--delay", default=3.0, type=float)
+    client.add_argument("--delay", default=3.0, type=_nonnegative_finite)
     return parser
 
 
@@ -170,6 +184,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         ) as error:
             detail = str(error) or error.__class__.__name__
             parser.error(f"cannot register /{args.cluster}/{args.name}: {detail}")
+        return
+
+    if args.command == "client":
+        try:
+            with connected_client() as client:
+                run_client(client, args.cluster, args.output_file)
+        except (
+            KazooException,
+            KazooTimeoutError,
+            UnicodeDecodeError,
+            ValueError,
+            OSError,
+        ) as error:
+            detail = str(error) or error.__class__.__name__
+            parser.error(f"cannot render /{args.cluster}: {detail}")
         return
 
     parser.error(f"{args.command} is not implemented yet")
