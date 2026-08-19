@@ -12,6 +12,7 @@ from kazoo.handlers.threading import KazooTimeoutError
 from kazoo.protocol.states import KazooState
 
 from zkdemo.server import validate_component
+from zkdemo.zookeeper import EnsembleMonitor
 
 
 class ClientConnection(Protocol):
@@ -70,6 +71,7 @@ def run_client(
     output_file: str | Path,
     *,
     delay: float = 3.0,
+    monitor: EnsembleMonitor | None = None,
     stop_event: Event | None = None,
 ) -> None:
     """Render the snapshot and converge after watched cluster changes."""
@@ -110,9 +112,13 @@ def run_client(
 
     client.add_listener(state_changed)
     try:
+        if monitor is not None:
+            monitor.start()
         if not install_when_connected():
             return
         while not shutdown.is_set():
+            if monitor is not None:
+                monitor.process()
             if not changes.wait(0.1):
                 continue
             changes.clear()
@@ -135,4 +141,6 @@ def run_client(
     except KeyboardInterrupt:
         return
     finally:
+        if monitor is not None:
+            monitor.stop()
         client.remove_listener(state_changed)

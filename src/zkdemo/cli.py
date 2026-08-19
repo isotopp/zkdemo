@@ -21,7 +21,7 @@ from zkdemo.listing import (
     validate_znode_path,
 )
 from zkdemo.server import serve_member
-from zkdemo.zookeeper import connected_client
+from zkdemo.zookeeper import EnsembleMonitor, connected_client
 
 console = Console(color_system=None, width=240)
 _STAT_FIELDS = (
@@ -186,7 +186,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "server":
         try:
             with connected_client() as client:
-                serve_member(client, args.cluster, args.name, args.endpoint)
+                monitor = EnsembleMonitor(client)
+                monitor.start()
+                serve_member(
+                    client, args.cluster, args.name, args.endpoint, monitor=monitor
+                )
         except NodeExistsError:
             parser.error(
                 f"cannot register /{args.cluster}/{args.name}: member already exists"
@@ -205,7 +209,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "client":
         try:
             with connected_client() as client:
-                run_client(client, args.cluster, args.output_file, delay=args.delay)
+                monitor = EnsembleMonitor(client)
+                run_client(
+                    client,
+                    args.cluster,
+                    args.output_file,
+                    delay=args.delay,
+                    monitor=monitor,
+                )
         except (
             KazooException,
             KazooTimeoutError,

@@ -1,10 +1,13 @@
 """Small boundary around the external ZooKeeper client."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from threading import Event
 from typing import Any, Protocol
 
 from kazoo.client import KazooClient
+from kazoo.exceptions import ConnectionLoss, SessionExpiredError
+from kazoo.handlers.threading import KazooTimeoutError
 
 from zkdemo.configuration import configured, parse_host_list
 
@@ -14,9 +17,15 @@ DEFAULT_ZOOKEEPER_HOSTS = "127.0.0.1:2181"
 class DiscoveryClient(Protocol):
     """ZooKeeper operations required for ensemble discovery."""
 
+    def add_listener(self, listener: Callable[[str], Any]) -> None: ...
+
+    def remove_listener(self, listener: Callable[[str], Any]) -> None: ...
+
     def sync(self, path: str) -> Any: ...
 
-    def get(self, path: str) -> tuple[bytes, Any]: ...
+    def get(
+        self, path: str, watch: Callable[[Any], Any] | None = None
+    ) -> tuple[bytes, Any]: ...
 
     def set_hosts(self, hosts: str) -> Any: ...
 
@@ -66,6 +75,47 @@ def discover_ensemble(client: DiscoveryClient) -> list[str]:
     unique_endpoints = list(dict.fromkeys(endpoints))
     client.set_hosts(",".join(unique_endpoints))
     return unique_endpoints
+
+
+class EnsembleMonitor:
+    """Re-arm and apply dynamic ensemble configuration changes."""
+
+    def __init__(self, client: DiscoveryClient) -> None:
+        self.client = client
+        self._changed = Event()
+
+    def _on_change(self, _event: Any) -> None:
+        self._changed.set()
+
+    def _on_state(self, _state: str) -> None:
+        self._changed.set()
+
+    def _install_watch(self) -> None:
+        self.client.get("/zookeeper/config", watch=self._on_change)
+
+    def start(self) -> None:
+        """Install the first one-shot configuration watch."""
+        self.client.add_listener(self._on_state)
+        self._install_watch()
+
+    def stop(self) -> None:
+        """Remove the state listener when the owning command exits."""
+        self.client.remove_listener(self._on_state)
+
+    def process(self) -> None:
+        """Re-arm a notification before applying its complete configuration."""
+        if not self._changed.is_set():
+            return
+        self._changed.clear()
+        try:
+            self._install_watch()
+        except ConnectionLoss, SessionExpiredError, KazooTimeoutError:
+            self._changed.set()
+            return
+        try:
+            discover_ensemble(self.client)
+        except ConnectionLoss, SessionExpiredError, KazooTimeoutError:
+            self._changed.set()
 
 
 @contextmanager

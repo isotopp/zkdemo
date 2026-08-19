@@ -8,6 +8,8 @@ from kazoo.exceptions import KazooException, NodeExistsError
 from kazoo.handlers.threading import KazooTimeoutError
 from kazoo.protocol.states import KazooState
 
+from zkdemo.zookeeper import EnsembleMonitor
+
 
 class RegistrationClient(Protocol):
     """ZooKeeper client operations needed by the registration loop."""
@@ -68,6 +70,7 @@ def serve_member(
     name: str,
     endpoint: str,
     *,
+    monitor: EnsembleMonitor | None = None,
     stop_event: Event | None = None,
 ) -> None:
     """Register a member and hold the process in the foreground."""
@@ -91,6 +94,8 @@ def serve_member(
     connected.set()
     try:
         while not shutdown.is_set():
+            if monitor is not None:
+                monitor.process()
             if not needs_registration:
                 wake.wait(0.1)
                 wake.clear()
@@ -109,4 +114,6 @@ def serve_member(
     except KeyboardInterrupt:
         return
     finally:
+        if monitor is not None:
+            monitor.stop()
         client.remove_listener(on_state)
