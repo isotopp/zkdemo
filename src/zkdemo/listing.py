@@ -56,3 +56,25 @@ def read_data(client: KazooClient, path: str) -> bytes:
     validate_znode_path(path)
     data, _ = client.get(path)
     return data
+
+
+def recursive_nodes(client: KazooClient, path: str = "/") -> list[dict[str, object]]:
+    """Return every reachable znode in deterministic depth-first order."""
+    validate_znode_path(path)
+    nodes: list[dict[str, object]] = []
+
+    def visit(current: str) -> None:
+        data, stat = client.get(current)
+        nodes.append(
+            {
+                "path": current,
+                "data": data.decode("utf-8"),
+                "stat": _stat_dict(stat),
+            }
+        )
+        for name in sorted(client.get_children(current)):
+            child_path = f"/{name}" if current == "/" else f"{current}/{name}"
+            visit(child_path)
+
+    visit(path)
+    return nodes

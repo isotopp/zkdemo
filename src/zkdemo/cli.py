@@ -11,10 +11,28 @@ from kazoo.handlers.threading import KazooTimeoutError
 from rich.console import Console
 from rich.table import Table
 
-from zkdemo.listing import direct_children, read_data, validate_znode_path
+from zkdemo.listing import (
+    direct_children,
+    read_data,
+    recursive_nodes,
+    validate_znode_path,
+)
 from zkdemo.zookeeper import connected_client
 
-console = Console(color_system=None)
+console = Console(color_system=None, width=240)
+_STAT_FIELDS = (
+    "czxid",
+    "mzxid",
+    "ctime",
+    "mtime",
+    "version",
+    "cversion",
+    "aversion",
+    "ephemeralOwner",
+    "dataLength",
+    "numChildren",
+    "pzxid",
+)
 
 
 def _print_lr_text(listing: dict[str, object]) -> None:
@@ -25,6 +43,18 @@ def _print_lr_text(listing: dict[str, object]) -> None:
             str(child["name"]),
             str(child["path"]),
             str(child["data"]),
+        )
+    console.print(table)
+
+
+def _print_lslr_text(nodes: list[dict[str, object]]) -> None:
+    table = Table("Path", "Data", *_STAT_FIELDS)
+    for node in nodes:
+        stat = cast(dict[str, int], node["stat"])
+        table.add_row(
+            str(node["path"]),
+            str(node["data"]),
+            *(str(stat[field]) for field in _STAT_FIELDS),
         )
     console.print(table)
 
@@ -101,6 +131,25 @@ def main(argv: Sequence[str] | None = None) -> None:
             parser.error(f"cannot read {args.znode_path}: {detail}")
         sys.stdout.buffer.write(data)
         sys.stdout.buffer.flush()
+        return
+
+    if args.command == "lslr":
+        try:
+            with connected_client() as client:
+                nodes = recursive_nodes(client)
+        except (
+            KazooException,
+            KazooTimeoutError,
+            UnicodeDecodeError,
+            ValueError,
+            OSError,
+        ) as error:
+            detail = str(error) or error.__class__.__name__
+            parser.error(f"cannot read /: {detail}")
+        if args.output_format == "json":
+            print(json.dumps({"nodes": nodes}))
+        else:
+            _print_lslr_text(nodes)
         return
 
     parser.error(f"{args.command} is not implemented yet")
