@@ -198,10 +198,10 @@ Refactor only after each ticket's tests are green. Keep ZooKeeper connection,
 watch-reconciliation, and output-file complexity behind small interfaces; test
 only the public command behavior and output artifacts.
 
-## 11. Load defaults and discover the ZooKeeper ensemble
+## 11. Load command defaults from dotenv files
 
-Add dotenv-backed command defaults and treat the configured ZooKeeper hosts as
-bootstrap hints for discovery of the current ensemble.
+Add dotenv-backed command defaults while preserving the existing environment
+and command-line interfaces.
 
 TDD slices:
 
@@ -216,28 +216,55 @@ TDD slices:
    `ZKTEST_TIMEOUT`. Explicit command-line options take precedence. Keep
    `--endpoint` mandatory and retain the existing built-in delay and connection
    defaults.
-3. RED: `ZKTEST_HOSTS` is treated as a single fixed address. GREEN: accept a
-   comma-separated list of validated `host:port` bootstrap hints, connect when
-   any hint is available, synchronize and read `/zookeeper/config`, and replace
-   the reconnect list with every advertised participant and observer client
-   endpoint.
-4. RED: a running `server` or `client` retains an obsolete host list after the
-   ensemble changes. GREEN: watch `/zookeeper/config`, re-arm the watch before
-   processing each notification, synchronize and validate the new complete
-   endpoint set, and update Kazoo's hosts for subsequent reconnects.
-5. RED: successful bootstrap followed by unavailable, malformed, incomplete,
-   or empty ensemble configuration silently leaves stale hints active. GREEN:
-   exit non-zero with a clear diagnostic. Cover ZooKeeper versions or legacy
-   configurations that cannot advertise every client endpoint.
-6. RED: configured values bypass command-line validation. GREEN: apply the same
+3. RED: configured values bypass command-line validation. GREEN: apply the same
    validation to every source, including finite non-negative delay and timeout,
    valid single-component cluster and node names, non-empty host entries, valid
    bracketed IP or hostname syntax, and ports from 1 through 65535.
-7. RED: users have no executable configuration reference. GREEN: add the fully
+4. RED: users have no executable configuration reference. GREEN: add the fully
    commented `sample.env` with the lookup order, precedence rules, supported
    settings, bootstrap/discovery behavior, defaults, and mandatory endpoint
    behavior documented.
 
+## 12. Discover the ZooKeeper ensemble from bootstrap hints
+
+Treat configured ZooKeeper hosts as bootstrap hints, then use the ensemble's
+advertised configuration for subsequent connections.
+
+TDD slices:
+
+1. RED: `ZKTEST_HOSTS` is treated as a single fixed address. GREEN: accept a
+   comma-separated list of validated `host:port` bootstrap hints and establish
+   a session when any hint is available.
+2. RED: a successful bootstrap leaves the client limited to its configured
+   hints. GREEN: synchronize and read `/zookeeper/config`, extract every
+   advertised participant and observer client endpoint, validate the complete
+   non-empty set, and replace Kazoo's hosts for subsequent reconnects.
+3. RED: unavailable, malformed, incomplete, or empty ensemble configuration
+   silently leaves stale hints active. GREEN: exit non-zero with a clear
+   diagnostic. Cover ZooKeeper versions or legacy configurations that cannot
+   advertise every client endpoint.
+
 Do not write discovered ensemble addresses back to a dotenv file. Discovery is
 process-local: configured hosts remain stable bootstrap hints analogous to DNS
 root hints, while the running client follows the ensemble's advertised set.
+
+## 13. Follow ZooKeeper ensemble configuration changes
+
+Keep long-running commands aligned with the ensemble's current advertised
+client endpoint set.
+
+TDD slices:
+
+1. RED: a running `server` or `client` retains an obsolete host list after the
+   ensemble changes. GREEN: watch `/zookeeper/config`, re-arm the watch before
+   processing each notification, and synchronize and read the new complete
+   endpoint set.
+2. RED: a valid configuration notification does not affect future connections.
+   GREEN: validate the discovered addresses and update Kazoo's hosts for
+   subsequent reconnects without interrupting the current healthy session.
+3. RED: a disconnect or session expiration loses the configuration watch.
+   GREEN: after reconnecting, perform a complete synchronized configuration
+   read, update the host set, and install a fresh watch.
+4. RED: an update containing an empty, malformed, or incomplete endpoint set is
+   silently accepted. GREEN: terminate with a clear diagnostic rather than
+   retaining a stale or partially updated reconnect list.
