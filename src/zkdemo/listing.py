@@ -49,3 +49,10 @@ def direct_children(client: KazooClient, path: str) -> dict[str, object]:
         "stat": _stat_dict(stat),
         "children": children,
     }
+
+
+def read_data(client: KazooClient, path: str) -> bytes:
+    """Return the exact data bytes stored at one znode."""
+    validate_znode_path(path)
+    data, _ = client.get(path)
+    return data

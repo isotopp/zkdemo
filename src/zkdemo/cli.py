@@ -2,14 +2,16 @@
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from typing import cast
 
 from kazoo.exceptions import KazooException
+from kazoo.handlers.threading import KazooTimeoutError
 from rich.console import Console
 from rich.table import Table
 
-from zkdemo.listing import direct_children, validate_znode_path
+from zkdemo.listing import direct_children, read_data, validate_znode_path
 from zkdemo.zookeeper import connected_client
 
 console = Console(color_system=None)
@@ -75,13 +77,30 @@ def main(argv: Sequence[str] | None = None) -> None:
             validate_znode_path(args.znode_path)
             with connected_client() as client:
                 listing = direct_children(client, args.znode_path)
-        except (KazooException, UnicodeDecodeError, ValueError, OSError) as error:
+        except (
+            KazooException,
+            KazooTimeoutError,
+            UnicodeDecodeError,
+            ValueError,
+            OSError,
+        ) as error:
             detail = str(error) or error.__class__.__name__
             parser.error(f"cannot read {args.znode_path}: {detail}")
         if args.output_format == "json":
             print(json.dumps(listing))
         else:
             _print_lr_text(listing)
+        return
+
+    if args.command == "cat":
+        try:
+            with connected_client() as client:
+                data = read_data(client, args.znode_path)
+        except (KazooException, KazooTimeoutError, ValueError, OSError) as error:
+            detail = str(error) or error.__class__.__name__
+            parser.error(f"cannot read {args.znode_path}: {detail}")
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
         return
 
     parser.error(f"{args.command} is not implemented yet")

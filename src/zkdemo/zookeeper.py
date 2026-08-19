@@ -13,7 +13,8 @@ DEFAULT_ZOOKEEPER_HOSTS = "127.0.0.1:2181"
 def connected_client() -> Iterator[KazooClient]:
     """Yield a connected client and close it when the command finishes."""
     client = KazooClient(hosts=os.environ.get("ZKTEST_HOSTS", DEFAULT_ZOOKEEPER_HOSTS))
-    client.start(timeout=10)
+    timeout = float(os.environ.get("ZKTEST_TIMEOUT", "10"))
+    client.start(timeout=timeout)
     try:
         yield client
     finally:
