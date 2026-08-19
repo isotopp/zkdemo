@@ -197,3 +197,47 @@ TDD slices:
 Refactor only after each ticket's tests are green. Keep ZooKeeper connection,
 watch-reconciliation, and output-file complexity behind small interfaces; test
 only the public command behavior and output artifacts.
+
+## 11. Load defaults and discover the ZooKeeper ensemble
+
+Add dotenv-backed command defaults and treat the configured ZooKeeper hosts as
+bootstrap hints for discovery of the current ensemble.
+
+TDD slices:
+
+1. RED: `zktest` cannot load defaults from the documented configuration
+   locations. GREEN: add dotenv support and load only the first existing file
+   from `./.env`, `$HOME/.zktest.ini`, and `/etc/zktest.ini`, in that order.
+   Preserve existing process environment values, and fail clearly with the
+   selected filename and setting when that file is unreadable or invalid.
+2. RED: commands still require repeated cluster, node-name, delay, and output
+   file options. GREEN: support `ZKTEST_CLUSTER`, `ZKTEST_NODE_NAME`,
+   `ZKTEST_DELAY`, and `ZKTEST_FILE` as command defaults, while retaining
+   `ZKTEST_TIMEOUT`. Explicit command-line options take precedence. Keep
+   `--endpoint` mandatory and retain the existing built-in delay and connection
+   defaults.
+3. RED: `ZKTEST_HOSTS` is treated as a single fixed address. GREEN: accept a
+   comma-separated list of validated `host:port` bootstrap hints, connect when
+   any hint is available, synchronize and read `/zookeeper/config`, and replace
+   the reconnect list with every advertised participant and observer client
+   endpoint.
+4. RED: a running `server` or `client` retains an obsolete host list after the
+   ensemble changes. GREEN: watch `/zookeeper/config`, re-arm the watch before
+   processing each notification, synchronize and validate the new complete
+   endpoint set, and update Kazoo's hosts for subsequent reconnects.
+5. RED: successful bootstrap followed by unavailable, malformed, incomplete,
+   or empty ensemble configuration silently leaves stale hints active. GREEN:
+   exit non-zero with a clear diagnostic. Cover ZooKeeper versions or legacy
+   configurations that cannot advertise every client endpoint.
+6. RED: configured values bypass command-line validation. GREEN: apply the same
+   validation to every source, including finite non-negative delay and timeout,
+   valid single-component cluster and node names, non-empty host entries, valid
+   bracketed IP or hostname syntax, and ports from 1 through 65535.
+7. RED: users have no executable configuration reference. GREEN: add the fully
+   commented `sample.env` with the lookup order, precedence rules, supported
+   settings, bootstrap/discovery behavior, defaults, and mandatory endpoint
+   behavior documented.
+
+Do not write discovered ensemble addresses back to a dotenv file. Discovery is
+process-local: configured hosts remain stable bootstrap hints analogous to DNS
+root hints, while the running client follows the ensemble's advertised set.

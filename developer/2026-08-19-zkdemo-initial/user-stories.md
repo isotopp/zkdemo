@@ -1,5 +1,65 @@
 # ZooKeeper inspection CLI user stories
 
+## Load command defaults from a dotenv file
+
+As a developer, I want `uv run zktest` to load shared connection and command
+defaults from a dotenv file, so that I do not have to repeat the same
+ZooKeeper and cluster options on every invocation.
+
+Acceptance criteria:
+
+- Before parsing command defaults, `zktest` looks for configuration files in
+  this exact order and loads only the first one that exists:
+  1. `.env` in the current working directory
+  2. `$HOME/.zktest.ini`
+  3. `/etc/zktest.ini`
+- All three files use dotenv syntax (`NAME=VALUE`, optional quoting, blank
+  lines, and lines beginning with `#` as comments); the `.ini` suffix does not
+  imply INI sections.
+- The supported settings are `ZKTEST_HOSTS`, `ZKTEST_CLUSTER`, `ZKTEST_DELAY`,
+  `ZKTEST_NODE_NAME`, and `ZKTEST_FILE`. `ZKTEST_TIMEOUT`, which controls the
+  ZooKeeper connection timeout, may also be supplied by the file.
+- Values already present in the process environment are not overwritten by
+  values from a file. An explicit command-line option takes precedence over
+  the process environment or loaded file, which in turn takes precedence over
+  a built-in default.
+- `ZKTEST_HOSTS` is a comma-separated list of ZooKeeper client endpoints,
+  such as `zk1.example:2181,zk2.example:2181,zk3.example:2181`. These endpoints
+  are bootstrap hints: the client tries them until it establishes a session,
+  then replaces them with the ensemble's current advertised client endpoint
+  set from `/zookeeper/config`.
+- After the initial discovery, `zktest` watches `/zookeeper/config`. When the
+  ensemble configuration changes, it synchronizes and reads the configuration
+  again, validates a non-empty client endpoint set, and updates the addresses
+  Kazoo will use for subsequent reconnects. A discovered set is scoped to the
+  running process and is not written back to a dotenv file.
+- Ensemble discovery requires ZooKeeper 3.5 or newer and a configuration that
+  advertises a usable client endpoint for every participant and observer. If a
+  hint accepts the connection but the current ensemble endpoint set cannot be
+  read or is malformed or incomplete, the command exits non-zero with a clear
+  diagnostic instead of silently continuing with stale hints.
+- The built-in ZooKeeper bootstrap hint remains `127.0.0.1:2181`; the built-in
+  delay remains `3.0` seconds. Cluster, node name, and output file have no
+  built-in defaults.
+- ZooKeeper hosts apply to every subcommand. Cluster applies to `server` and
+  `client`, node name applies to `server`, and delay and output file apply to
+  `client`. The server endpoint has no configured or built-in default and must
+  always be supplied as `--endpoint`. When any other required value has neither
+  a command-line value nor a configured default, argument parsing fails with a
+  clear diagnostic.
+- Configured values receive the same validation as their command-line
+  equivalents. Every host entry must contain a valid hostname or bracketed IP
+  address and an integer port from 1 through 65535; empty entries are rejected.
+  Delay and timeout must be finite non-negative numbers, and configured cluster
+  and node names must be valid single ZooKeeper path components.
+- Finding no configuration file is not an error. If the selected file exists
+  but cannot be read, contains invalid dotenv syntax, or contains an invalid
+  value used by the command, `zktest` exits non-zero with a diagnostic that
+  names the file and setting.
+- The repository contains a fully commented `sample.env` documenting every
+  supported setting, the lookup order, and the precedence rules. Users can
+  copy it to one of the lookup locations and uncomment the settings they need.
+
 ## Browse the complete znode tree
 
 As a developer, I want to run `uv run zktest lslr` to see the complete znode
