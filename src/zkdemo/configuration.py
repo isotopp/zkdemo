@@ -1,6 +1,7 @@
 """Process-local dotenv configuration and validation."""
 
 import ast
+import ipaddress
 import math
 import os
 import re
@@ -50,30 +51,45 @@ def _parse_value(raw: str, path: Path, line_number: int, key: str) -> str:
 
 
 def _validate_hosts(value: str, path: Path, key: str) -> None:
-    entries = value.split(",")
+    try:
+        parse_host_list(value)
+    except ValueError as error:
+        raise ConfigurationError(f"{path}: {key}: {error}") from error
+
+
+def parse_host_list(value: str) -> list[str]:
+    """Validate and return a comma-separated ZooKeeper endpoint list."""
+    entries = [entry.strip() for entry in value.split(",")]
     for entry in entries:
         if not entry:
-            raise ConfigurationError(f"{path}: {key}: empty host entry")
+            raise ValueError("empty host entry")
         if entry.startswith("["):
             closing = entry.find("]")
             if closing <= 1 or entry[closing + 1 : closing + 2] != ":":
-                raise ConfigurationError(f"{path}: {key}: invalid host {entry!r}")
+                raise ValueError(f"invalid host {entry!r}")
             host = entry[1:closing]
             port_text = entry[closing + 2 :]
         else:
             if entry.count(":") != 1:
-                raise ConfigurationError(f"{path}: {key}: invalid host {entry!r}")
+                raise ValueError(f"invalid host {entry!r}")
             host, port_text = entry.rsplit(":", 1)
-        if not host or not _HOST_RE.fullmatch(host):
-            raise ConfigurationError(f"{path}: {key}: invalid host {entry!r}")
+        valid_host = bool(host and _HOST_RE.fullmatch(host))
+        if entry.startswith("["):
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                valid_host = False
+            else:
+                valid_host = True
+        if not valid_host:
+            raise ValueError(f"invalid host {entry!r}")
         try:
             port = int(port_text)
         except ValueError as error:
-            raise ConfigurationError(
-                f"{path}: {key}: invalid port in {entry!r}"
-            ) from error
+            raise ValueError(f"invalid port in {entry!r}") from error
         if not 1 <= port <= 65535:
-            raise ConfigurationError(f"{path}: {key}: port out of range in {entry!r}")
+            raise ValueError(f"port out of range in {entry!r}")
+    return entries
 
 
 def _validate_setting(path: Path, key: str, value: str) -> None:

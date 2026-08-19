@@ -42,7 +42,15 @@ def zookeeper_hosts(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     log_dir.mkdir()
 
     port = _free_port()
+    quorum_port = _free_port()
+    election_port = _free_port()
     config_file = config_dir / "zoo.cfg"
+    dynamic_config = config_dir / "zoo.cfg.dynamic"
+    dynamic_config.write_text(
+        f"server.1=127.0.0.1:{quorum_port}:{election_port}:participant;127.0.0.1:{port}\n",
+        encoding="utf-8",
+    )
+    (data_dir / "myid").write_text("1\n", encoding="utf-8")
     config_file.write_text(
         "\n".join(
             [
@@ -52,7 +60,9 @@ def zookeeper_hosts(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
                 f"dataDir={data_dir}",
                 f"clientPort={port}",
                 "admin.enableServer=false",
-                "standaloneEnabled=true",
+                "standaloneEnabled=false",
+                f"dynamicConfigFile={dynamic_config}",
+                "reconfigEnabled=true",
                 "",
             ]
         ),

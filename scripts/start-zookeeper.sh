@@ -8,6 +8,7 @@ CONFIG_DIR="${RUNTIME_DIR}/conf"
 DATA_DIR="${RUNTIME_DIR}/data"
 LOG_DIR="${RUNTIME_DIR}/logs"
 CONFIG_FILE="${CONFIG_DIR}/zoo.cfg"
+DYNAMIC_CONFIG_FILE="${CONFIG_DIR}/zoo.cfg.dynamic"
 
 find_zk_server() {
     if [[ -n "${ZOOKEEPER_HOME:-}" ]]; then
@@ -35,6 +36,10 @@ find_zk_server() {
 mkdir -p "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}"
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
+    printf '1\n' >"${DATA_DIR}/myid"
+    cat >"${DYNAMIC_CONFIG_FILE}" <<EOF
+server.1=127.0.0.1:2888:3888:participant;127.0.0.1:2181
+EOF
     cat >"${CONFIG_FILE}" <<EOF
 tickTime=2000
 initLimit=10
@@ -43,7 +48,9 @@ dataDir=${DATA_DIR}
 clientPort=2181
 maxClientCnxns=60
 admin.enableServer=false
-standaloneEnabled=true
+standaloneEnabled=false
+reconfigEnabled=true
+dynamicConfigFile=${DYNAMIC_CONFIG_FILE}
 EOF
 fi
 
@@ -51,5 +58,5 @@ ZK_SERVER=$(find_zk_server)
 export ZOOCFGDIR="${CONFIG_DIR}"
 export ZOO_LOG_DIR="${LOG_DIR}"
 
-echo "Starting standalone ZooKeeper with data in ${DATA_DIR}"
+echo "Starting single-participant ZooKeeper with data in ${DATA_DIR}"
 "${ZK_SERVER}" start
