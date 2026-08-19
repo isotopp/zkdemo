@@ -24,15 +24,13 @@ def test_unimplemented_command_fails_clearly(
     with pytest.raises(SystemExit) as exception:
         main(
             [
-                "server",
+                "client",
                 "--cluster",
                 "bpdb",
-                "--name",
-                "bpdb17",
-                "--endpoint",
-                "10.1.1.1:3306",
+                "--file",
+                "/tmp/bpdb.endpoints",
             ]
         )
 
     assert exception.value.code == 2
-    assert "server is not implemented yet" in capsys.readouterr().err
+    assert "client is not implemented yet" in capsys.readouterr().err

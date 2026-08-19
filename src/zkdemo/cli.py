@@ -6,7 +6,7 @@ import sys
 from collections.abc import Sequence
 from typing import cast
 
-from kazoo.exceptions import KazooException
+from kazoo.exceptions import KazooException, NodeExistsError
 from kazoo.handlers.threading import KazooTimeoutError
 from rich.console import Console
 from rich.table import Table
@@ -17,6 +17,7 @@ from zkdemo.listing import (
     recursive_nodes,
     validate_znode_path,
 )
+from zkdemo.server import serve_member
 from zkdemo.zookeeper import connected_client
 
 console = Console(color_system=None, width=240)
@@ -150,6 +151,25 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(json.dumps({"nodes": nodes}))
         else:
             _print_lslr_text(nodes)
+        return
+
+    if args.command == "server":
+        try:
+            with connected_client() as client:
+                serve_member(client, args.cluster, args.name, args.endpoint)
+        except NodeExistsError:
+            parser.error(
+                f"cannot register /{args.cluster}/{args.name}: member already exists"
+            )
+        except (
+            KazooException,
+            KazooTimeoutError,
+            UnicodeError,
+            ValueError,
+            OSError,
+        ) as error:
+            detail = str(error) or error.__class__.__name__
+            parser.error(f"cannot register /{args.cluster}/{args.name}: {detail}")
         return
 
     parser.error(f"{args.command} is not implemented yet")
