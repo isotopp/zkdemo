@@ -1,11 +1,30 @@
 """Command-line entry point for the ZooKeeper development harness."""
 
 import argparse
+import json
 from collections.abc import Sequence
+from typing import cast
 
+from kazoo.exceptions import KazooException
 from rich.console import Console
+from rich.table import Table
+
+from zkdemo.listing import direct_children, validate_znode_path
+from zkdemo.zookeeper import connected_client
 
 console = Console(color_system=None)
+
+
+def _print_lr_text(listing: dict[str, object]) -> None:
+    children = cast(list[dict[str, object]], listing["children"])
+    table = Table("Name", "Path", "Data")
+    for child in children:
+        table.add_row(
+            str(child["name"]),
+            str(child["path"]),
+            str(child["data"]),
+        )
+    console.print(table)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,4 +69,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Run the selected command."""
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "lr":
+        try:
+            validate_znode_path(args.znode_path)
+            with connected_client() as client:
+                listing = direct_children(client, args.znode_path)
+        except (KazooException, UnicodeDecodeError, ValueError, OSError) as error:
+            detail = str(error) or error.__class__.__name__
+            parser.error(f"cannot read {args.znode_path}: {detail}")
+        if args.output_format == "json":
+            print(json.dumps(listing))
+        else:
+            _print_lr_text(listing)
+        return
+
     parser.error(f"{args.command} is not implemented yet")
