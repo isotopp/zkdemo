@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from zkdemo.client import run_client
+from zkdemo.configuration import ConfigurationError, configured, load_configuration
 from zkdemo.listing import (
     direct_children,
     read_data,
@@ -80,6 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="zktest",
         description="Run and exercise a local single-instance ZooKeeper.",
     )
+    try:
+        load_configuration()
+    except ConfigurationError as error:
+        parser.error(str(error))
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     lslr = subcommands.add_parser("lslr", help="Recursively list the ZooKeeper tree")
@@ -99,16 +104,27 @@ def build_parser() -> argparse.ArgumentParser:
     server = subcommands.add_parser(
         "server", help="Register an ephemeral server endpoint"
     )
-    server.add_argument("--cluster", required=True)
-    server.add_argument("--name", required=True)
+    server_cluster = configured("ZKTEST_CLUSTER")
+    server_name = configured("ZKTEST_NODE_NAME")
+    server.add_argument(
+        "--cluster", default=server_cluster, required=server_cluster is None
+    )
+    server.add_argument("--name", default=server_name, required=server_name is None)
     server.add_argument("--endpoint", required=True)
 
     client = subcommands.add_parser(
         "client", help="Write a cluster's endpoint list and watch for changes"
     )
-    client.add_argument("--cluster", required=True)
-    client.add_argument("--file", required=True, dest="output_file")
-    client.add_argument("--delay", default=3.0, type=_nonnegative_finite)
+    client_cluster = configured("ZKTEST_CLUSTER")
+    client_file = configured("ZKTEST_FILE")
+    client_delay = configured("ZKTEST_DELAY", "3.0")
+    client.add_argument(
+        "--cluster", default=client_cluster, required=client_cluster is None
+    )
+    client.add_argument(
+        "--file", default=client_file, required=client_file is None, dest="output_file"
+    )
+    client.add_argument("--delay", default=client_delay, type=_nonnegative_finite)
     return parser
 
 
